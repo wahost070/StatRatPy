@@ -1,0 +1,351 @@
+{
+    "exports": {},
+    "file_size": 71168,
+    "file_type": "PE32+ executable (GUI) x86-64, for MS Windows",
+    "hashes": {
+        "md5": "737978cd2171b0ea1de6691e24b7727f",
+        "sha1": "f2ed8be208495149b36d56dd0bcc00b195cbbad0",
+        "sha256": "f2ed8be208495149b36d56dd0bcc00b195cbbad0"
+    },
+    "import_table_hash_sha256": "f27a7fc3a53e74f45be370131953896a",
+    "imports": {
+        "api-ms-win-core-apiquery-l1-1-0.dll": {
+            "address": "0x140008370",
+            "functions": [
+                "ApiSetQueryApiSetPresence"
+            ]
+        },
+        "api-ms-win-core-com-l1-1-0.dll": {
+            "address": "0x1400083d0",
+            "functions": [
+                "CoResumeClassObjects",
+                "CLSIDFromString",
+                "CoReleaseServerProcess",
+                "CoAddRefServerProcess",
+                "CoInitializeEx",
+                "CoRegisterClassObject",
+                "CoRevokeClassObject",
+                "CoWaitForMultipleHandles",
+                "CoInitializeSecurity",
+                "CoCreateInstance",
+                "CoUninitialize"
+            ]
+        },
+        "api-ms-win-core-console-l1-1-0.dll": {
+            "address": "0x1400083e0",
+            "functions": [
+                "WriteConsoleW"
+            ]
+        },
+        "api-ms-win-core-console-l1-2-0.dll": {
+            "address": "0x1400083f8",
+            "functions": [
+                "AttachConsole",
+                "FreeConsole"
+            ]
+        },
+        "api-ms-win-core-debug-l1-1-0.dll": {
+            "address": "0x140008418",
+            "functions": [
+                "OutputDebugStringW",
+                "IsDebuggerPresent",
+                "DebugBreak"
+            ]
+        },
+        "api-ms-win-core-delayload-l1-1-0.dll": {
+            "address": "0x140008428",
+            "functions": [
+                "DelayLoadFailureHook"
+            ]
+        },
+        "api-ms-win-core-delayload-l1-1-1.dll": {
+            "address": "0x140008438",
+            "functions": [
+                "ResolveDelayLoadedAPI"
+            ]
+        },
+        "api-ms-win-core-errorhandling-l1-1-0.dll": {
+            "address": "0x140008468",
+            "functions": [
+                "SetLastError",
+                "UnhandledExceptionFilter",
+                "SetErrorMode",
+                "GetLastError",
+                "SetUnhandledExceptionFilter"
+            ]
+        },
+        "api-ms-win-core-file-l1-1-0.dll": {
+            "address": "0x140008490",
+            "functions": [
+                "SetFilePointer",
+                "ReadFile",
+                "GetFileAttributesW",
+                "CreateFileW"
+            ]
+        },
+        "api-ms-win-core-handle-l1-1-0.dll": {
+            "address": "0x1400084a0",
+            "functions": [
+                "CloseHandle"
+            ]
+        },
+        "api-ms-win-core-heap-l1-1-0.dll": {
+            "address": "0x1400084c8",
+            "functions": [
+                "GetProcessHeap",
+                "HeapSetInformation",
+                "HeapFree",
+                "HeapAlloc"
+            ]
+        },
+        "api-ms-win-core-heap-l2-1-0.dll": {
+            "address": "0x1400084e0",
+            "functions": [
+                "LocalAlloc",
+                "LocalFree"
+            ]
+        },
+        "api-ms-win-core-kernel32-private-l1-1-0.dll": {
+            "address": "0x1400084f0",
+            "functions": [
+                "Wow64EnableWow64FsRedirection"
+            ]
+        },
+        "api-ms-win-core-libraryloader-l1-2-0.dll": {
+            "address": "0x140008530",
+            "functions": [
+                "GetProcAddress",
+                "GetModuleFileNameA",
+                "GetModuleHandleW",
+                "FreeLibrary",
+                "LoadLibraryExW",
+                "LoadStringW",
+                "GetModuleHandleExW"
+            ]
+        },
+        "api-ms-win-core-localization-l1-2-0.dll": {
+            "address": "0x140008540",
+            "functions": [
+                "FormatMessageW"
+            ]
+        },
+        "api-ms-win-core-path-l1-1-0.dll": {
+            "address": "0x140008550",
+            "functions": [
+                "PathCchAppend"
+            ]
+        },
+        "api-ms-win-core-processenvironment-l1-1-0.dll": {
+            "address": "0x140008568",
+            "functions": [
+                "GetCommandLineW",
+                "SearchPathW"
+            ]
+        },
+        "api-ms-win-core-processthreads-l1-1-0.dll": {
+            "address": "0x1400085a8",
+            "functions": [
+                "ExitProcess",
+                "CreateProcessW",
+                "TerminateProcess",
+                "GetCurrentProcess",
+                "GetCurrentProcessId",
+                "GetStartupInfoW",
+                "GetCurrentThreadId"
+            ]
+        },
+        "api-ms-win-core-profile-l1-1-0.dll": {
+            "address": "0x1400085b8",
+            "functions": [
+                "QueryPerformanceCounter"
+            ]
+        },
+        "api-ms-win-core-rtlsupport-l1-1-0.dll": {
+            "address": "0x1400085d8",
+            "functions": [
+                "RtlVirtualUnwind",
+                "RtlCaptureContext",
+                "RtlLookupFunctionEntry"
+            ]
+        },
+        "api-ms-win-core-sidebyside-l1-1-0.dll": {
+            "address": "0x140008608",
+            "functions": [
+                "ReleaseActCtx",
+                "DeactivateActCtx",
+                "QueryActCtxW",
+                "ActivateActCtx",
+                "CreateActCtxW"
+            ]
+        },
+        "api-ms-win-core-string-l1-1-0.dll": {
+            "address": "0x140008620",
+            "functions": [
+                "CompareStringW",
+                "WideCharToMultiByte"
+            ]
+        },
+        "api-ms-win-core-string-l2-1-0.dll": {
+            "address": "0x140008630",
+            "functions": [
+                "CharNextW"
+            ]
+        },
+        "api-ms-win-core-synch-l1-1-0.dll": {
+            "address": "0x1400086a0",
+            "functions": [
+                "AcquireSRWLockExclusive",
+                "SetEvent",
+                "WaitForSingleObject",
+                "CreateMutexExW",
+                "ReleaseSRWLockShared",
+                "CreateSemaphoreExW",
+                "AcquireSRWLockShared",
+                "ReleaseMutex",
+                "OpenSemaphoreW",
+                "ReleaseSemaphore",
+                "WaitForSingleObjectEx",
+                "CreateEventW",
+                "ReleaseSRWLockExclusive"
+            ]
+        },
+        "api-ms-win-core-synch-l1-2-0.dll": {
+            "address": "0x1400086c0",
+            "functions": [
+                "SleepConditionVariableSRW",
+                "WakeAllConditionVariable",
+                "Sleep"
+            ]
+        },
+        "api-ms-win-core-sysinfo-l1-1-0.dll": {
+            "address": "0x1400086e0",
+            "functions": [
+                "GetTickCount",
+                "GetSystemTimeAsFileTime",
+                "GetSystemDirectoryW"
+            ]
+        },
+        "api-ms-win-core-util-l1-1-0.dll": {
+            "address": "0x1400086f8",
+            "functions": [
+                "DecodePointer",
+                "EncodePointer"
+            ]
+        },
+        "api-ms-win-core-winrt-error-l1-1-0.dll": {
+            "address": "0x140008710",
+            "functions": [
+                "RoOriginateErrorW",
+                "RoOriginateError"
+            ]
+        },
+        "api-ms-win-core-wow64-l1-1-1.dll": {
+            "address": "0x140008728",
+            "functions": [
+                "GetSystemWow64Directory2W",
+                "IsWow64Process2"
+            ]
+        },
+        "api-ms-win-downlevel-shlwapi-l1-1-1.dll": {
+            "address": "0x140008738",
+            "functions": [
+                "PathIsRelativeW"
+            ]
+        },
+        "api-ms-win-downlevel-shlwapi-l2-1-1.dll": {
+            "address": "0x140008748",
+            "functions": [
+                "SHSetThreadRef"
+            ]
+        },
+        "imagehlp.dll": {
+            "address": "0x140008758",
+            "functions": [
+                "ImageDirectoryEntryToData"
+            ]
+        },
+        "msvcrt.dll": {
+            "address": "0x140008838",
+            "functions": [
+                "_initterm",
+                "__setusermatherr",
+                "__CxxFrameHandler3",
+                "_lock",
+                "__C_specific_handler",
+                "_unlock",
+                "_vsnwprintf",
+                "__dllonexit",
+                "_onexit",
+                "?terminate@@YAXXZ",
+                "_amsg_exit",
+                "__wgetmainargs",
+                "__set_app_type",
+                "exit",
+                "_fmode",
+                "_exit",
+                "_cexit",
+                "_commode",
+                "_XcptFilter",
+                "free",
+                "_purecall",
+                "_wtoi",
+                "memcpy_s",
+                "_wcmdln",
+                "_callnewh",
+                "malloc",
+                "memset"
+            ]
+        },
+        "ntdll.dll": {
+            "address": "0x140008888",
+            "functions": [
+                "NtClose",
+                "NtOpenProcessToken",
+                "RtlNtStatusToDosError",
+                "NtQueryInformationToken",
+                "RtlSetSearchPathMode",
+                "RtlWow64IsWowGuestMachineSupported",
+                "RtlImageNtHeader",
+                "NtQuerySystemInformation",
+                "NtSetInformationToken"
+            ]
+        }
+    },
+    "sections": {
+        ".data": {
+            "raw_data_size": 512,
+            "virtual_addr": "0xc000",
+            "virtual_size": "0x868"
+        },
+        ".didat": {
+            "raw_data_size": 512,
+            "virtual_addr": "0xe000",
+            "virtual_size": "0x108"
+        },
+        ".pdata": {
+            "raw_data_size": 1536,
+            "virtual_addr": "0xd000",
+            "virtual_size": "0x5a0"
+        },
+        ".rdata": {
+            "raw_data_size": 14336,
+            "virtual_addr": "0x8000",
+            "virtual_size": "0x3676"
+        },
+        ".reloc": {
+            "raw_data_size": 512,
+            "virtual_addr": "0x16000",
+            "virtual_size": "0x100"
+        },
+        ".rsrc": {
+            "raw_data_size": 26624,
+            "virtual_addr": "0xf000",
+            "virtual_size": "0x6770"
+        },
+        ".text": {
+            "raw_data_size": 26112,
+            "virtual_addr": "0x1000",
+            "virtual_size": "0x654c"
+        }
+    }
+}
