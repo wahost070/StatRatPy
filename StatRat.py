@@ -1,6 +1,4 @@
-
 from contextlib import contextmanager
-from tempfile import mkdtemp
 from urllib.parse import urlparse
 import aiohttp
 import asyncio
@@ -10,12 +8,15 @@ import logging
 import magic
 import os
 import pefile
-import pprint
+from pprint import pprint as pp
 import re
 import requests
 import shutil
 import yara
 import zipfile
+import peutils
+import time
+import tempfile
 
 """
 https://cuckoo.readthedocs.io/en/latest/usage/submit/
@@ -29,14 +30,20 @@ SCAN_STRINGS = False
 class StatRat():
     
 # ------------------------- create temp dir workspace ------------------------ #
+# * https://rules.sonarsource.com/python/RSPEC-5445
     @contextmanager
     def make_temp_directory(self):
-        temp_dir = mkdtemp()
+        temp_dir = tempfile.TemporaryDirectory(dir=f"{self.cwd}").name
         try:
             yield temp_dir
         finally:
             self.pe_file.close()
-            shutil.rmtree(temp_dir)
+            
+            try:
+                shutil.rmtree(temp_dir)
+            except:
+                # file has already been deleted
+                pass
 
 # -------------------------------- unzip file -------------------------------- #
     def unzip_file(self, temp_dir, zip):
@@ -104,7 +111,7 @@ class StatRat():
 
         d = {"hashes": x}
         return d
-
+    
 # ----------------------------- get imported symbols ---------------------------- #
     def get_imported_symbols(self):
         
@@ -127,12 +134,12 @@ class StatRat():
                 exports[exp.name.decode("utf-8")] = {"address": hex(self.pe_file.OPTIONAL_HEADER.ImageBase + exp.address), "ordinal": exp.ordinal}
         except AttributeError as e:
             # no EXPORTS attribute
-            logging.info("No export symbols detected or error")
-            pass
+            logging.info(f"No export symbols detected or error: {e}")
+
         d = {"exports": exports}
         return d
-
 # ---------------------- download yara rules --------------------- #
+    """
 # * https://www.youtube.com/watch?v=ln99aRAcRt0
 # * https://isleem.medium.com/detect-malware-packers-and-cryptors-with-python-yara-pefile-65bf3c15be78
     async def get_yars(self, s, url):
@@ -159,10 +166,11 @@ class StatRat():
                     with open(f"{self.yara_dir}/{v['f_name']}", "w") as f:
                         f.write(v["result"])
 
+
 # ------------------------------ load yara rules ----------------------------- #
 # * https://github.com/VirusTotal/yara/issues/499
 
-    def load_yara_rules(self):
+    def get_packer_detection_yara(self):
         r = {}
 
         for file in os.listdir(f"{self.yara_dir}\\"):
@@ -195,6 +203,18 @@ class StatRat():
 
         except Exception as e:
             print(f"Exception: {e}")
+    """
+
+# ----------------------------- packer detection ----------------------------- #
+    def get_packer_detection(self):
+        d = {"packers": None}
+        
+        signatures = peutils.SignatureDatabase(f"{self.cwd}\\userdb.txt")
+        matches = signatures.match_all(self.pe_file, ep_only=True)
+        t = set(matches[-1]) # the last match is most accurate as most bytes will have been matched
+
+        d["packers"] = list(t)
+        return d
 
 # --------------------------- list section adresses -------------------------- #
 
@@ -219,11 +239,83 @@ class StatRat():
 # * https://malwology.com/2018/08/24/python-for-malware-analysis-getting-started/
 
     def get_import_table_hash(self):
-        x = {"import_table_hash_sha256": self.pe_file.get_imphash()}
+        x = {"import_table_hash_md5": self.pe_file.get_imphash()}
         return x
             
-# -------------------------- find strings in binary -------------------------- #
+# --------------------------- get security warnings -------------------------- #
+    def get_security_warnings(self):
+        x = {"pe_warnings": self.pe_file.get_warnings()}
+        return x
+            
+# ------------------------------ get entry addr ------------------------------ #
+    def get_entry_addr(self):
+        x = {"entry_address": hex(self.pe_file.OPTIONAL_HEADER.AddressOfEntryPoint)}
+        return x
 
+# ---------------------------- get image bass addr --------------------------- #
+    def get_image_base_addr(self):
+        x = {"image_base_address": hex(self.pe_file.OPTIONAL_HEADER.ImageBase)}
+        return x
+    
+# ---------------------------- get linker version ---------------------------- #
+    def get_linker_version(self):
+        x = {
+            "linker_version": {
+                "major": self.pe_file.OPTIONAL_HEADER.MajorLinkerVersion,
+                "minor": self.pe_file.OPTIONAL_HEADER.MinorLinkerVersion
+            }
+        }
+        return x
+    
+# --------------------------- get os linker version -------------------------- #
+    def get_os_version(self):
+        x = {
+            "os_version": {
+                "major": self.pe_file.OPTIONAL_HEADER.MajorOperatingSystemVersion,
+                "minor": self.pe_file.OPTIONAL_HEADER.MinorOperatingSystemVersion
+            }
+        }
+        return x
+    
+# ----------------------------- get os linker architecture ----------------------------- #
+    def get_os_architecture(self):
+        d = {}
+        arch = self.pe_file.FILE_HEADER.Machine
+        
+        if arch == 0x14c:
+            d["machine"] = "x86"
+        elif arch == 0x14d:
+            d["machine"] = "486"
+        elif arch == 0x14e:
+            d["machine"] = "Pentium"
+        elif arch == 0x0200:
+            d["machine"] = "AMD64"
+        elif self.pe_file.OPTIONAL_HEADER.Magic == 0x20b:
+            d["machine"] = "x64"
+        else:
+            d["machine"] = "Unknown"
+        
+        return d
+    
+# --------------------------- get file architecture -------------------------- #
+    def get_file_architecture(self):
+        if self.pe_file.FILE_HEADER.Machine == 0x8664:
+            d = {"file_arch": 64}
+        else:
+            d = {"file_arch": 32}
+        return d
+            
+# ----------------------------- get compile time ----------------------------- #
+    def get_compile_time(self):
+        d = {}
+        try:
+            d["compile_time"] = f"{time.asctime(time.gmtime(self.pe_file.FILE_HEADER.TimeDateStamp))} UTC"
+        except Exception as e:
+            d["compile_time"] = None
+            
+        return d
+
+# -------------------------- find strings in binary -------------------------- #
     def get_strings(self):
         x = []
         with open(self.malware_path, "rb") as f_binary:
@@ -242,23 +334,10 @@ class StatRat():
             "https://raw.githubusercontent.com/Yara-Rules/rules/master/packers/packer.yar",
             "https://raw.githubusercontent.com/Yara-Rules/rules/master/packers/peid.yar"
         ]
-        self.packers = [
-            'AHTeam', 'Armadillo', 'Stelth', 'yodas', 'ASProtect', 'ACProtect', 'PEnguinCrypt',
-            'UPX', 'Safeguard', 'VMProtect', 'Vprotect', 'WinLicense', 'Themida', 'WinZip', 'WWPACK',
-            'Y0da', 'Pepack', 'Upack', 'TSULoader'
-            'SVKP', 'Simple', 'StarForce', 'SeauSFX', 'RPCrypt', 'Ramnit',
-            'RLPack', 'ProCrypt', 'Petite', 'PEShield', 'Perplex',
-            'PELock', 'PECompact', 'PEBundle', 'RLPack', 'NsPack', 'Neolite',
-            'Mpress', 'MEW', 'MaskPE', 'ImpRec', 'kkrunchy', 'Gentee', 'FSG', 'Epack',
-            'DAStub', 'Crunch', 'CCG', 'Boomerang', 'ASPAck', 'Obsidium', 'Ciphator',
-            'Phoenix', 'Thoreador', 'QinYingShieldLicense', 'Stones', 'CrypKey', 'VPacker',
-            'Turbo', 'codeCrypter', 'Trap', 'beria', 'YZPack', 'crypt', 'crypt', 'pack',
-            'protect', 'tect'
-        ]
         
         # start async task to download the latest yara rules
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.start_async_task())
+        #loop = asyncio.get_event_loop()
+        #loop.run_until_complete(self.start_async_task())
         
         # repeat for every zip in the directory
         for zip in os.listdir(self.zip_dir_path):
@@ -267,18 +346,26 @@ class StatRat():
                 with self.make_temp_directory() as temp_dir:
                     self.malware_path = self.unzip_file(temp_dir, f"{self.zip_dir_path}/{zip}")
                     self.pe_file = pefile.PE(self.malware_path, fast_load=False)
-                    self.d.update(self.get_exported_symbols())
                     self.d.update(self.get_file_hash())
                     self.d.update(self.get_file_size())
-                    self.d.update(self.get_imported_symbols())
                     self.d.update(self.get_magic_bytes())
-                    self.d.update(self.get_section_addresses())
                     self.d.update(self.get_import_table_hash())
-                    
+                    self.d.update(self.get_entry_addr())
+                    self.d.update(self.get_image_base_addr())
+                    self.d.update(self.get_exported_symbols())
+                    self.d.update(self.get_imported_symbols())
+                    self.d.update(self.get_section_addresses())
+                    self.d.update(self.get_os_version())
+                    self.d.update(self.get_linker_version())
+                    self.d.update(self.get_os_architecture())
+                    self.d.update(self.get_file_architecture())
+                    self.d.update(self.get_compile_time())
+                    self.d.update(self.get_security_warnings())
+
                     if SCAN_STRINGS:
                         self.d.update(self.get_strings())
                     
-                    self.load_yara_rules()
+                    #self.get_packer_detection_yara() # packer detetion with yar
                 
                 # write outputs to a file
                 self.write_to_json_file()
