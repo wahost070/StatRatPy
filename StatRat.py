@@ -1,33 +1,34 @@
 from contextlib import contextmanager
 from distutils import extension
+from dotenv import load_dotenv
+from multiprocessing import Process, Queue
+from pathlib import PurePath
+from pprint import pprint as pp
 from urllib.parse import urlparse
 import aiohttp
 import asyncio
+import errno
 import hashlib
 import json
 import logging
 import magic
 import os
 import pefile
-from pprint import pprint as pp
+import peutils
+import platform
 import re
 import requests
 import shutil
+import subprocess
+import tempfile
+import time
+import uuid
 import yara
 import zipfile
-import peutils
-import time
-import tempfile
-from pathlib import PurePath
-import errno
-import platform
-import subprocess
-from dotenv import load_dotenv
-from multiprocessing import Process, Queue
-import uuid
 
 
 """
+GENERAL REFERENCES:
 https://cuckoo.readthedocs.io/en/latest/usage/submit/
 https://developers.virustotal.com/reference/file-behaviour-summary
 """
@@ -37,9 +38,11 @@ DEBUG = True
 SCAN_STRINGS = False
 local_hash_table = set()
 
+# - Context manager for loading malware and closing it when no longer in use - #
 class LoadMalware(object):
     
-    def __init__(self, file_name):
+    def __init__(self, file_name, uuid_name):
+        self.uuid_name = uuid_name
         self.pe_file = None
         
         try:
@@ -49,25 +52,31 @@ class LoadMalware(object):
             self.pe_file = e
             
     def __enter__(self):
+        logging.debug(f"Starting context for {self.uuid_name}")
         return self.pe_file
 
     def __exit__(self, type, value, traceback):
+        self._cleanup()
+        
+        return True
+    
+    def _cleanup(self):
         try:
             self.pe_file.close()
         except Exception as e:
-            pass
+            logging.warning(f"Exception caught when attempting to  close PE file: {e}")
         
-        return True
-
 
 class StatRat(object):
 
 # ----------------------------- get absolute path ---------------------------- #
+
     def list_absolute_dir(self, dir):
         return [os.path.join(dir, file) for file in os.listdir(dir)]
 
 
 # ----------------------------- get relative path ---------------------------- #
+
     def get_relative_path(self, path, withoutExtension=False):
         if withoutExtension is True:
             return PurePath(path.replace(PurePath(path).suffix, '')).name
@@ -99,6 +108,7 @@ class StatRat(object):
                 
 
 # -------------------------------- unzip file -------------------------------- #
+
     def unzip_file(self, temp_dir, zip):
         pword = "infected"
         try:
@@ -215,7 +225,8 @@ class StatRat(object):
 # ---------------------- download yara rules --------------------- #
 # * https://www.youtube.com/watch?v=ln99aRAcRt0
 # * https://isleem.medium.com/detect-malware-packers-and-cryptors-with-python-yara-pefile-65bf3c15be78
-    async def get_yars(self, s, url):
+
+    async def async_downloader(self, s, url):
         async with s.get(url) as response:
             f_name = urlparse(url).path.split('/')[-1]
             result = await response.text()
@@ -223,18 +234,23 @@ class StatRat(object):
             return {"f_name": f_name, "result": result}
     
     async def start_yara_async_download(self):
-        if not os.path.exists(self.yara_dir) and len(os.listdir(self.yara_dir)) != 3:
+        urls = [
+            "https://raw.githubusercontent.com/Yara-Rules/rules/master/crypto/crypto_signatures.yar",
+            "https://raw.githubusercontent.com/Yara-Rules/rules/master/packers/packer.yar",
+            "https://raw.githubusercontent.com/Yara-Rules/rules/master/packers/peid.yar"
+        ]
+        
+        if not os.path.exists(self.yara_dir):
             logging.info("Downloading yara rules!")
             os.mkdir(f"{self.yara_dir}")
         else:
             logging.info("Yara rules already downloaded, skipping!")
             return
 
-        
         async with aiohttp.ClientSession() as session:
             tasks = []
-            for v in self.urls:
-                task = asyncio.ensure_future(self.get_yars(session, v))
+            for v in urls:
+                task = asyncio.ensure_future(self.async_downloader(session, v))
                 tasks.append(task)
                 
             out = await asyncio.gather(*tasks)
@@ -243,6 +259,28 @@ class StatRat(object):
                 if len(os.listdir(f"{self.yara_dir}")) != 3:
                     with open(f"{self.yara_dir}/{v['f_name']}", "w") as f:
                         f.write(v["result"])
+
+    async def start_userdb_async_download(self):
+        if not os.path.exists(self.userdb) or 1 == 1:
+            logging.info("Downloading userdb!")
+        else:
+            logging.info("userdb already downloaded, skipping!")
+            return
+        
+        url = "https://raw.githubusercontent.com/sooshie/packerid/master/userdb.txt"
+        async with aiohttp.ClientSession() as session:
+
+            task = asyncio.ensure_future(self.async_downloader(session, url))
+                
+            out = await asyncio.gather(task)
+            
+            d = out[0]["result"]
+
+            with open(f"{self.userdb}", "w", encoding="utf-8") as f:
+                f.write(d)
+        
+    
+        
 
 # ------------------------------ load yara rules ----------------------------- #
 # * https://github.com/VirusTotal/yara/issues/499
@@ -272,7 +310,6 @@ class StatRat(object):
             ret = ret.decode("utf-8")
             ret = list(filter(None, ret.split('\n')))
 
-
             for e in ret:
                 x = e.split(':')[1].split(' ')[0]
                 
@@ -285,10 +322,11 @@ class StatRat(object):
 
 
 # ----------------------------- packer detection ----------------------------- #
+
     def get_packer_detection(self, pe_file):
         d = {"packers": None}
         
-        signatures = peutils.SignatureDatabase(f"{self.cwd}/userdb.txt")
+        signatures = peutils.SignatureDatabase(self.userdb)
         matches = signatures.match_all(pe_file, ep_only=True)
         t = set(matches[-1]) # the last match is most accurate as most bytes will have been matched
 
@@ -309,37 +347,41 @@ class StatRat(object):
 # ---------------------------- write to json file ---------------------------- #
 
     def write_to_json_file(self, d, **kwargs):
-        if len(kwargs) == 2:
-            
-            mal = self.get_relative_path(kwargs['mal'], True)
-            z = self.get_relative_path(kwargs['zippie'], True)
-            
-            try:
-                os.makedirs(f"{self.cwd}/results/{z}")
-            except OSError as e:
-                if e.errno != errno.EEXIST:
-                    raise
-            
-            with open(f"{self.cwd}/results/{z}/{mal}_{d['hashes']['md5']}.json", 'w') as json_f:
-                json.dump(d, json_f, sort_keys=True, indent=4, separators=(',', ': '))
+        
+        try:
+            if len(kwargs) == 2:
                 
-            logging.info(f"Created log at {os.curdir}/results/{z}/{mal}_{d['hashes']['md5']}.json")
-        else:
-            # TODO: ERROR HANDLE OUTPUT
-
-            try:
-                os.makedirs(f"{self.cwd}/results")
-            except OSError as e:
-                if e.errno != errno.EEXIST:
-                    raise
+                mal = self.get_relative_path(kwargs['mal'], True)
+                z = self.get_relative_path(kwargs['zippie'], True)
                 
-            with open(f"{self.cwd}/results/err.json", 'w+') as json_f:
                 try:
-                    j = json.load(json_f)
-                    j.append(d)
-                    json.dump(j, json_f, sort_keys=True, indent=4, separators=(',', ': '))
-                except json.JSONDecodeError:
+                    os.makedirs(f"{self.cwd}/results/{z}")
+                except OSError as e:
+                    if e.errno != errno.EEXIST:
+                        raise
+                
+                with open(f"{self.cwd}/results/{z}/{mal}_{d['hashes']['md5']}.json", 'w') as json_f:
                     json.dump(d, json_f, sort_keys=True, indent=4, separators=(',', ': '))
+                    
+                logging.info(f"Created log at {os.curdir}/results/{z}/{mal}_{d['hashes']['md5']}.json")
+            else:
+
+                try:
+                    os.makedirs(f"{self.cwd}/results")
+                except OSError as e:
+                    if e.errno != errno.EEXIST:
+                        raise
+                    
+                with open(f"{self.cwd}/results/err.json", 'w+') as json_f:
+                    try:
+                        j = json.load(json_f)
+                        j.append(d)
+                        json.dump(j, json_f, sort_keys=True, indent=4, separators=(',', ': '))
+                    except json.JSONDecodeError:
+                        json.dump(d, json_f, sort_keys=True, indent=4, separators=(',', ': '))
+        except Exception as e:
+            # error writing to file
+            logging.error(f"Execption caught when writing to file: {e}")
 
 # --------------------------- get import table hash -------------------------- #
 # * https://malwology.com/2018/08/24/python-for-malware-analysis-getting-started/
@@ -430,6 +472,7 @@ class StatRat(object):
         d = {"strings": [v.decode("utf-8") for v in x]}
         return d
 
+# ---------------------- multiprocessing friendly method --------------------- #
     def pfriendly_analyse_malware(self, queue, zip, counter_zip, uuid_name):
         logging.debug(f"NEW THREAD: {uuid_name}")
         logging.info(f"Extracting {self.get_relative_path(zip)}")
@@ -451,14 +494,16 @@ class StatRat(object):
             
             # iterate through all files in the extracted directory
             for counter_malware, malware_file_path in enumerate(self.list_absolute_dir(malware_extracted_dir)):
-                with LoadMalware(malware_file_path) as pe_file:
+                with LoadMalware(malware_file_path, uuid_name) as pe_file:
                     if pe_file is type(Exception):
                         e = pe_file
                         failpoint = {"malware_name": self.get_relative_path(malware_file_path), "zip": zip, "error": f"{e}"}
                         self.write_to_json_file(failpoint)
                         continue
-                    
+                
                     d = {}
+                    d["found_in_zip"] = self.get_relative_path(zip)
+                    d["file_name"] = self.get_relative_path(malware_file_path)
                     
                     logging.debug(f"Zip {counter_zip}, file {counter_malware}")
                     logging.info(f"Scanning {self.get_relative_path(malware_file_path)}")
@@ -470,9 +515,6 @@ class StatRat(object):
                         continue
                         
                     local_hash_table.add(d["hashes"]["md5"])
-                
-                    d["found_in"] = self.get_relative_path(zip)
-                    d["file_name"] = self.get_relative_path(malware_file_path)
                     
                     if not self.isWindows:
                         logging.debug("Checking yara rules!")
@@ -499,7 +541,7 @@ class StatRat(object):
                         
                     # write outputs to a file
                 self.write_to_json_file(d, mal=malware_file_path, zippie=zip)
-        #uuid_namequeue.put("SUCCESS")
+        logging.debug(f"Thread {uuid_name} complete")
 
     def main(self):
         zip_dir_path = f"{self.cwd}/malware/"
@@ -507,9 +549,14 @@ class StatRat(object):
         queue = Queue()
         jobs = []
         
-        # download yara rules
         loop = asyncio.get_event_loop()
+        
+        # download yara rules
         loop.run_until_complete(self.start_yara_async_download())
+        
+        # download packerid userdb
+        loop.run_until_complete(self.start_userdb_async_download())
+        
         
         # repeat for every zip in the directory
         for counter_zip, zip in enumerate(self.list_absolute_dir(zip_dir_path)):
@@ -524,24 +571,19 @@ class StatRat(object):
         #print(queue.get())
         for p in jobs:
             p.join()
-            
-    
+
     def __init__(self, isWindows):
         self.isWindows = isWindows
         self.cwd = os.path.dirname(os.path.abspath(__file__))
         self.yara_dir = f"{self.cwd}/yara_rules"
-        self.urls = [
-            "https://raw.githubusercontent.com/Yara-Rules/rules/master/crypto/crypto_signatures.yar",
-            "https://raw.githubusercontent.com/Yara-Rules/rules/master/packers/packer.yar",
-            "https://raw.githubusercontent.com/Yara-Rules/rules/master/packers/peid.yar"
-        ]
+        self.userdb = f"{self.cwd}/userdb.txt"
         
         self.main()
             
 
 if __name__ == "__main__":
     load_dotenv()
-    isWindows = True
+
     handlers = [
         logging.FileHandler(filename="trace.log", encoding="utf-8", mode="w+"),
         logging.StreamHandler()
@@ -558,5 +600,14 @@ if __name__ == "__main__":
         isWindows = False
     else:
         logging.info(f"OS Detection: {platform.system()} {platform.release()}")
-
+        isWindows = True
+    try:
+        cwd = os.path.dirname(os.path.abspath(__file__))
+        os.makedirs(f"{cwd}/results")
+        os.makedirs(f"{cwd}/malware")
+        os.makedirs(f"{cwd}/yara_rules")
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+        
     startrat = StatRat(isWindows)
