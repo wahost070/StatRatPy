@@ -7,4 +7,4 @@ This is a deliverable for my Honours Project "An investigation on the security i
 
 
 ## Disclosure
-IMPORTANT: The malware/ directory contains LIVE MALWARE that has been defanged, but regardless, caution is advised to prevent infection. Please handle with care. Malware sample password is "infected".
+IMPORTANT: The `malware/` directory may contain LIVE MALWARE (that has been defanged by being placed in a zip), but regardless, caution is advised to prevent infection. Please handle with care. Malware sample password is "infected".
