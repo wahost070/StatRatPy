@@ -21,7 +21,6 @@ https://raw.githubusercontent.com/guelfoweb/peframe/5beta/peframe/signatures/use
 
 */
 
-/*
 import "pe"
 
 rule NsPacK_V33_LiuXingPing_additional: PEiD
@@ -69456,4 +69455,3 @@ rule ACProtect_14x_RISCO_soft: PEiD
 
 }
 
-*/

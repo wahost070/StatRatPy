@@ -20057,7 +20057,6 @@ rule winrar_sfx : Packer
 		$signature1
 }
 
-/*
 rule mpress_2_xx_x86 : Packer
 {
 	meta:
@@ -20159,7 +20158,6 @@ rule yoda_crypter_1_3 : Crypter
 	condition:
 		$signature1 at pe.entry_point
 }
-*/
 rule dotfuscator : packer
 {
 	meta:

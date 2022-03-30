@@ -2,3 +2,4 @@ results/*
 *.log
 old
 .env
+.vscode

@@ -168,7 +168,6 @@ class StatRat(object):
         else:
             api_url = 'https://www.virustotal.com/vtapi/v2/file/scan'
             
-            #TODO: hide this API key
             params = dict(apikey=os.getenv('VT_API_KEY'))
             with open(malware_path, "rb") as file:
                 files = dict(file=(malware_path, file))
@@ -214,7 +213,76 @@ class StatRat(object):
         d = {"exports": exports}
         return d
 # ---------------------- download yara rules --------------------- #
-# TODO: IMPLEMENT YARA
+# * https://www.youtube.com/watch?v=ln99aRAcRt0
+# * https://isleem.medium.com/detect-malware-packers-and-cryptors-with-python-yara-pefile-65bf3c15be78
+    async def get_yars(self, s, url):
+        async with s.get(url) as response:
+            f_name = urlparse(url).path.split('/')[-1]
+            result = await response.text()
+            
+            return {"f_name": f_name, "result": result}
+    
+    async def start_yara_async_download(self):
+        if not os.path.exists(self.yara_dir) and len(os.listdir(self.yara_dir)) != 3:
+            logging.info("Downloading yara rules!")
+            os.mkdir(f"{self.yara_dir}")
+        else:
+            logging.info("Yara rules already downloaded, skipping!")
+            return
+
+        
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+            for v in self.urls:
+                task = asyncio.ensure_future(self.get_yars(session, v))
+                tasks.append(task)
+                
+            out = await asyncio.gather(*tasks)
+            
+            for v in out:
+                if len(os.listdir(f"{self.yara_dir}")) != 3:
+                    with open(f"{self.yara_dir}/{v['f_name']}", "w") as f:
+                        f.write(v["result"])
+
+# ------------------------------ load yara rules ----------------------------- #
+# * https://github.com/VirusTotal/yara/issues/499
+
+    def load_yara_rules(self, malware_path):
+        r = {}
+        d = {"packer": [], "crypto_signatures": [], "peid": []}
+
+        for file in os.listdir(f"{self.yara_dir}"):
+            if file.lower().endswith(".yar") and os.path.isfile(f"{self.yara_dir}/{file}"):
+                r[file[:-4]] = f"{self.yara_dir}/{file}"
+            else:
+                # No valid .yar files
+                logging.error("No valid .yar files found, skipping")
+                return
+
+        try:
+                
+            ret = subprocess.check_output(["yara", "-we", f"{list(r.items())[0][0]}:{list(r.items())[0][1]}", f"{list(r.items())[1][0]}:{list(r.items())[1][1]}", f"{list(r.items())[2][0]}:{list(r.items())[2][1]}", f"{malware_path}"])
+
+            if b"error" in ret:
+                # error found
+                logging.error("Couldn't apply rules to binary, returning!")
+                return
+            
+            # else process data nicely and add to d
+            ret = ret.decode("utf-8")
+            ret = list(filter(None, ret.split('\n')))
+
+
+            for e in ret:
+                x = e.split(':')[1].split(' ')[0]
+                
+                d[e.split(':')[0]].append(x)
+                
+        except Exception as e:
+            logging.error(f"Exception caught: {e}")
+            
+        return {"yara": d}
+
 
 # ----------------------------- packer detection ----------------------------- #
     def get_packer_detection(self, pe_file):
@@ -369,10 +437,11 @@ class StatRat(object):
         
         # make temp directory
         with self.make_temp_directory() as temp_dir:
-        #with tempfile.TemporaryDirectory(dir=f"{self.cwd}") as temp_dir:
             print(temp_dir)
+            
             # get directory name of the extracted malware
             m = self.unzip_file(temp_dir, zip)
+            
             # break if we couldnt unzip correctly
             if m is None:
                 logging.error("WE COULDN'T UNZIP PROPERLY; SKIPPING")
@@ -405,6 +474,10 @@ class StatRat(object):
                     d["found_in"] = self.get_relative_path(zip)
                     d["file_name"] = self.get_relative_path(malware_file_path)
                     
+                    if not self.isWindows:
+                        logging.debug("Checking yara rules!")
+                        d.update(self.load_yara_rules(malware_file_path))
+                        
                     d.update(self.get_file_size(malware_file_path))
                     d.update(self.get_magic_bytes(malware_file_path))
                     d.update(self.get_import_table_hash(pe_file))
@@ -424,31 +497,28 @@ class StatRat(object):
                     if SCAN_STRINGS:
                         d.update(self.get_strings(malware_file_path))
                         
-                    if not self.isWindows:
-                        # download yara rules
-                        pass
-                    
                     # write outputs to a file
                 self.write_to_json_file(d, mal=malware_file_path, zippie=zip)
         #uuid_namequeue.put("SUCCESS")
-                    #pe_file.close()
 
     def main(self):
         zip_dir_path = f"{self.cwd}/malware/"
 
         queue = Queue()
         jobs = []
+        
+        # download yara rules
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.start_yara_async_download())
+        
         # repeat for every zip in the directory
         for counter_zip, zip in enumerate(self.list_absolute_dir(zip_dir_path)):
-            
-            #self.pfriendly_analyse_malware(zip, counter_zip)
-            
             uuid_name = uuid.uuid4().hex
             p = Process(target=self.pfriendly_analyse_malware, name=uuid_name, args=(queue, zip, counter_zip, uuid_name,))
             jobs.append(p)
 
-        for p in jobs:
             logging.debug(f"Starting {len(jobs)} {'jobs' if len(jobs) > 1 else 'job'}")
+        for p in jobs:
             p.start()
 
         #print(queue.get())
@@ -459,6 +529,12 @@ class StatRat(object):
     def __init__(self, isWindows):
         self.isWindows = isWindows
         self.cwd = os.path.dirname(os.path.abspath(__file__))
+        self.yara_dir = f"{self.cwd}/yara_rules"
+        self.urls = [
+            "https://raw.githubusercontent.com/Yara-Rules/rules/master/crypto/crypto_signatures.yar",
+            "https://raw.githubusercontent.com/Yara-Rules/rules/master/packers/packer.yar",
+            "https://raw.githubusercontent.com/Yara-Rules/rules/master/packers/peid.yar"
+        ]
         
         self.main()
             
