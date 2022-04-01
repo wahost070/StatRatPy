@@ -1,10 +1,12 @@
 from contextlib import contextmanager
+from datetime import datetime
 from distutils import extension
 from dotenv import load_dotenv
 from multiprocessing import Process, Queue
 from pathlib import PurePath
 from pprint import pprint as pp
 from urllib.parse import urlparse
+from shutil import which
 import aiohttp
 import asyncio
 import errno
@@ -28,6 +30,13 @@ import zipfile
 
 
 """
+Install:
+- (pip install) yara-python
+- (pip install) yara
+- (apt install) libmagic-dev
+
+
+
 GENERAL REFERENCES:
 https://cuckoo.readthedocs.io/en/latest/usage/submit/
 https://developers.virustotal.com/reference/file-behaviour-summary
@@ -68,6 +77,13 @@ class LoadMalware(object):
         
 
 class StatRat(object):
+
+# ----------------------- check if binary is installed ----------------------- #
+# * https://stackoverflow.com/questions/11210104/check-if-a-program-exists-from-a-python-script
+    def bin_exists(self, name):
+        """Check whether `name` is on PATH and marked as executable."""
+        
+        return which(name) is not None
 
 # ----------------------------- get absolute path ---------------------------- #
 
@@ -348,6 +364,8 @@ class StatRat(object):
 
     def write_to_json_file(self, d, **kwargs):
         
+        date = datetime.now().strftime("%y%m%d_%H%M%S%f")[:-3]
+        
         try:
             if len(kwargs) == 2:
                 
@@ -355,15 +373,15 @@ class StatRat(object):
                 z = self.get_relative_path(kwargs['zippie'], True)
                 
                 try:
-                    os.makedirs(f"{self.cwd}/results/{z}")
+                    os.makedirs(f"{self.cwd}/results/{date}/{z}")
                 except OSError as e:
                     if e.errno != errno.EEXIST:
                         raise
                 
-                with open(f"{self.cwd}/results/{z}/{mal}_{d['hashes']['md5']}.json", 'w') as json_f:
+                with open(f"{self.cwd}/results/{date}/{z}/{mal}_{d['hashes']['md5']}.json", 'w') as json_f:
                     json.dump(d, json_f, sort_keys=True, indent=4, separators=(',', ': '))
                     
-                logging.info(f"Created log at {os.curdir}/results/{z}/{mal}_{d['hashes']['md5']}.json")
+                logging.info(f"Created log at {os.curdir}/results/{date}/{z}/{mal}_{d['hashes']['md5']}.json")
             else:
 
                 try:
@@ -372,7 +390,7 @@ class StatRat(object):
                     if e.errno != errno.EEXIST:
                         raise
                     
-                with open(f"{self.cwd}/results/err.json", 'w+') as json_f:
+                with open(f"{self.cwd}/results/{date}/err.json", 'w+') as json_f:
                     try:
                         j = json.load(json_f)
                         j.append(d)
@@ -516,7 +534,7 @@ class StatRat(object):
                         
                     local_hash_table.add(d["hashes"]["md5"])
                     
-                    if not self.isWindows:
+                    if not self.isWindows and self.bin_exists("yara"):
                         logging.debug("Checking yara rules!")
                         d.update(self.load_yara_rules(malware_file_path))
                         

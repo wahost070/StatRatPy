@@ -1,5 +1,6 @@
-results/*
-*.log
-old
 .env
 .vscode
+*.log
+old
+RELEASES
+results/*
