@@ -78,6 +78,10 @@ class LoadMalware(object):
 
 class StatRat(object):
 
+# ------------------------------- get datetime ------------------------------- #
+    def get_datetime(self):
+        return datetime.now().strftime("%y%m%d_%H%M%S%f")[:-3]
+
 # ----------------------- check if binary is installed ----------------------- #
 # * https://stackoverflow.com/questions/11210104/check-if-a-program-exists-from-a-python-script
     def bin_exists(self, name):
@@ -364,13 +368,13 @@ class StatRat(object):
 
     def write_to_json_file(self, d, **kwargs):
         
-        date = datetime.now().strftime("%y%m%d_%H%M%S%f")[:-3]
+        date = kwargs["date"]
         
         try:
-            if len(kwargs) == 2:
+            if "mal" in kwargs.keys() and "zippie" in kwargs.keys():
                 
-                mal = self.get_relative_path(kwargs['mal'], True)
-                z = self.get_relative_path(kwargs['zippie'], True)
+                mal = self.get_relative_path(kwargs["mal"], True)
+                z = self.get_relative_path(kwargs["zippie"], True)
                 
                 try:
                     os.makedirs(f"{self.cwd}/results/{date}/{z}")
@@ -385,7 +389,7 @@ class StatRat(object):
             else:
 
                 try:
-                    os.makedirs(f"{self.cwd}/results")
+                    os.makedirs(f"{self.cwd}/results/{date}/")
                 except OSError as e:
                     if e.errno != errno.EEXIST:
                         raise
@@ -491,7 +495,7 @@ class StatRat(object):
         return d
 
 # ---------------------- multiprocessing friendly method --------------------- #
-    def pfriendly_analyse_malware(self, queue, zip, counter_zip, uuid_name):
+    def pfriendly_analyse_malware(self, queue, zip, counter_zip, uuid_name,cdate):
         logging.debug(f"NEW THREAD: {uuid_name}")
         logging.info(f"Extracting {self.get_relative_path(zip)}")
         global local_hash_table
@@ -516,7 +520,7 @@ class StatRat(object):
                     if pe_file is type(Exception):
                         e = pe_file
                         failpoint = {"malware_name": self.get_relative_path(malware_file_path), "zip": zip, "error": f"{e}"}
-                        self.write_to_json_file(failpoint)
+                        self.write_to_json_file(failpoint, date=cdate)
                         continue
                 
                     d = {}
@@ -558,7 +562,7 @@ class StatRat(object):
                         d.update(self.get_strings(malware_file_path))
                         
                     # write outputs to a file
-                self.write_to_json_file(d, mal=malware_file_path, zippie=zip)
+                self.write_to_json_file(d, mal=malware_file_path, zippie=zip, date=cdate)
         logging.debug(f"Thread {uuid_name} complete")
 
     def main(self):
@@ -575,11 +579,11 @@ class StatRat(object):
         # download packerid userdb
         loop.run_until_complete(self.start_userdb_async_download())
         
-        
+        cdate = self.get_datetime()
         # repeat for every zip in the directory
         for counter_zip, zip in enumerate(self.list_absolute_dir(zip_dir_path)):
             uuid_name = uuid.uuid4().hex
-            p = Process(target=self.pfriendly_analyse_malware, name=uuid_name, args=(queue, zip, counter_zip, uuid_name,))
+            p = Process(target=self.pfriendly_analyse_malware, name=uuid_name, args=(queue, zip, counter_zip, uuid_name, cdate,))
             jobs.append(p)
 
             logging.debug(f"Starting {len(jobs)} {'jobs' if len(jobs) > 1 else 'job'}")
@@ -597,7 +601,6 @@ class StatRat(object):
         self.userdb = f"{self.cwd}/userdb.txt"
         
         self.main()
-            
 
 if __name__ == "__main__":
     load_dotenv()
@@ -629,3 +632,4 @@ if __name__ == "__main__":
             raise
         
     startrat = StatRat(isWindows)
+    logging.info("Completed all threads!")
