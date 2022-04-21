@@ -1,3 +1,4 @@
+#!/usr/bin/env python3.10
 from contextlib import contextmanager
 from datetime import datetime
 from dotenv import load_dotenv
