@@ -1,6 +1,12 @@
+.dockerignore
 .env
+.github
 .vscode
 *.log
+docker-compose.debug.yml
+docker-compose.yml
+Dockerfile
+extract.py
 old
 RELEASES
 results/*

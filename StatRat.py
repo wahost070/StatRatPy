@@ -1,6 +1,5 @@
 from contextlib import contextmanager
 from datetime import datetime
-from distutils import extension
 from dotenv import load_dotenv
 from multiprocessing import Process, Queue
 from pathlib import PurePath
@@ -26,13 +25,17 @@ import tempfile
 import time
 import uuid
 import yara
+#import humanhash
 import zipfile
+
+"""
+TODO:
+    - humanhash
+"""
 
 
 """
 Install:
-- (pip install) yara-python
-- (pip install) yara
 - (apt install) libmagic-dev
 
 
@@ -44,7 +47,7 @@ https://developers.virustotal.com/reference/file-behaviour-summary
     
 LOCAL = True
 DEBUG = True
-SCAN_STRINGS = False
+
 local_hash_table = set()
 
 # - Context manager for loading malware and closing it when no longer in use - #
@@ -178,10 +181,16 @@ class StatRat(object):
         x = {}
         if LOCAL is True:
             BUF_SIZE = 65536
-
+            ssdeep = None
+    
             md5 = hashlib.md5()
             sha1 = hashlib.sha1()
             sha256 = hashlib.sha1()
+            
+            if not self.isWindows and self.bin_exists("ssdeep"):
+                ret = subprocess.check_output(["/usr/bin/ssdeep", "-bc", malware_path])
+                s = ret.decode("utf-8").split('\n')[1].split(',')[0]
+                ssdeep = s
 
             with open(malware_path, 'rb') as f:
                 while True:
@@ -192,9 +201,12 @@ class StatRat(object):
                     sha1.update(data)
                     sha256.update(data)
 
+
             x["md5"] = md5.hexdigest()
             x["sha1"] = sha1.hexdigest()
             x["sha256"] = sha256.hexdigest()
+            x["ssdeep"] = ssdeep
+            #x["humanhash"] = humanhash.humanize(md5.hexdigest())
         else:
             api_url = 'https://www.virustotal.com/vtapi/v2/file/scan'
             
@@ -319,7 +331,7 @@ class StatRat(object):
 
         try:
                 
-            ret = subprocess.check_output(["yara", "-we", f"{list(r.items())[0][0]}:{list(r.items())[0][1]}", f"{list(r.items())[1][0]}:{list(r.items())[1][1]}", f"{list(r.items())[2][0]}:{list(r.items())[2][1]}", f"{malware_path}"])
+            ret = subprocess.check_output(["/usr/local/bin/yara", "-we", f"{list(r.items())[0][0]}:{list(r.items())[0][1]}", f"{list(r.items())[1][0]}:{list(r.items())[1][1]}", f"{list(r.items())[2][0]}:{list(r.items())[2][1]}", f"{malware_path}"])
 
             if b"error" in ret:
                 # error found
@@ -345,7 +357,6 @@ class StatRat(object):
 
     def get_packer_detection(self, pe_file):
         d = {"packers": None}
-        
         signatures = peutils.SignatureDatabase(self.userdb)
         matches = signatures.match_all(pe_file, ep_only=True)
         t = set(matches[-1]) # the last match is most accurate as most bytes will have been matched
@@ -382,10 +393,10 @@ class StatRat(object):
                     if e.errno != errno.EEXIST:
                         raise
                 
-                with open(f"{self.cwd}/results/{date}/{z}/{mal}_{d['hashes']['md5']}.json", 'w') as json_f:
-                    json.dump(d, json_f, sort_keys=True, indent=4, separators=(',', ': '))
+                with open(f"{self.cwd}/results/{date}/{z}/{mal}.json", 'w') as json_f:
+                    json.dump(d, json_f, sort_keys=False, indent=4, separators=(',', ': '))
                     
-                logging.info(f"Created log at {os.curdir}/results/{date}/{z}/{mal}_{d['hashes']['md5']}.json")
+                logging.info(f"Created log at {os.curdir}/results/{date}/{z}/{mal}.json")
             else:
 
                 try:
@@ -398,9 +409,9 @@ class StatRat(object):
                     try:
                         j = json.load(json_f)
                         j.append(d)
-                        json.dump(j, json_f, sort_keys=True, indent=4, separators=(',', ': '))
+                        json.dump(j, json_f, sort_keys=False, indent=4, separators=(',', ': '))
                     except json.JSONDecodeError:
-                        json.dump(d, json_f, sort_keys=True, indent=4, separators=(',', ': '))
+                        json.dump(d, json_f, sort_keys=False, indent=4, separators=(',', ': '))
         except Exception as e:
             # error writing to file
             logging.error(f"Execption caught when writing to file: {e}")
@@ -495,14 +506,14 @@ class StatRat(object):
         return d
 
 # ---------------------- multiprocessing friendly method --------------------- #
-    def pfriendly_analyse_malware(self, queue, zip, counter_zip, uuid_name,cdate):
+    def pfriendly_analyse_malware(self, queue, zip, counter_zip, uuid_name, cdate):
         logging.debug(f"NEW THREAD: {uuid_name}")
         logging.info(f"Extracting {self.get_relative_path(zip)}")
         global local_hash_table
         
         # make temp directory
         with self.make_temp_directory() as temp_dir:
-            print(temp_dir)
+            logging.debug(f"Working in {temp_dir}")
             
             # get directory name of the extracted malware
             m = self.unzip_file(temp_dir, zip)
@@ -523,43 +534,58 @@ class StatRat(object):
                         self.write_to_json_file(failpoint, date=cdate)
                         continue
                 
-                    d = {}
-                    d["found_in_zip"] = self.get_relative_path(zip)
-                    d["file_name"] = self.get_relative_path(malware_file_path)
+                    d = {
+                        "info": {},
+                        "target": {},
+                        "static": {},
+                        "strings": {}
+                    }
+                    
+                    # INFO
+                    d["info"]["found_in_zip"] = self.get_relative_path(zip)
+                    d["info"]["file_name"] = self.get_relative_path(malware_file_path)
                     
                     logging.debug(f"Zip {counter_zip}, file {counter_malware}")
                     logging.info(f"Scanning {self.get_relative_path(malware_file_path)}")
                     
-                    d.update(self.get_file_hash(malware_file_path))
+                    d["info"].update(self.get_file_hash(malware_file_path))
 
-                    if d["hashes"]["md5"] in local_hash_table:
+                    if d["info"]["hashes"]["md5"] in local_hash_table:
                         logging.warning("Duplicate hash in table, skipping!")
                         continue
                         
-                    local_hash_table.add(d["hashes"]["md5"])
+                    # STATIC
+                    local_hash_table.add(d["info"]["hashes"]["md5"])
+                    
+                    # INFO
+                    d["info"].update({"date": f"{datetime.now()}"})
+                    d["info"].update(self.get_file_size(malware_file_path))
+                    d["info"].update(self.get_magic_bytes(malware_file_path))
+                    d["info"].update(self.get_os_version(pe_file))
+                    d["info"].update(self.get_linker_version(pe_file))
+                    d["info"].update(self.get_file_architecture(pe_file))
+                    d["info"].update(self.get_os_architecture(pe_file))
+
+                    # TARGET
+                    d["target"].update(self.get_packer_detection(pe_file))
                     
                     if not self.isWindows and self.bin_exists("yara"):
                         logging.debug("Checking yara rules!")
-                        d.update(self.load_yara_rules(malware_file_path))
-                        
-                    d.update(self.get_file_size(malware_file_path))
-                    d.update(self.get_magic_bytes(malware_file_path))
-                    d.update(self.get_import_table_hash(pe_file))
-                    d.update(self.get_entry_addr(pe_file))
-                    d.update(self.get_image_base_addr(pe_file))
-                    d.update(self.get_exported_symbols(pe_file))
-                    d.update(self.get_imported_symbols(pe_file))
-                    d.update(self.get_section_addresses(pe_file))
-                    d.update(self.get_os_version(pe_file))
-                    d.update(self.get_linker_version(pe_file))
-                    d.update(self.get_os_architecture(pe_file))
-                    d.update(self.get_file_architecture(pe_file))
-                    d.update(self.get_compile_time(pe_file))
-                    d.update(self.get_security_warnings(pe_file))
-                    d.update(self.get_packer_detection(pe_file))
-
-                    if SCAN_STRINGS:
-                        d.update(self.get_strings(malware_file_path))
+                        d["target"].update(self.load_yara_rules(malware_file_path))
+                    
+                    
+                    # STATIC
+                    d["static"].update(self.get_compile_time(pe_file))
+                    d["static"].update(self.get_import_table_hash(pe_file))
+                    d["static"].update(self.get_entry_addr(pe_file))
+                    d["static"].update(self.get_image_base_addr(pe_file))
+                    d["static"].update(self.get_exported_symbols(pe_file))
+                    d["static"].update(self.get_imported_symbols(pe_file))
+                    d["static"].update(self.get_section_addresses(pe_file))
+                    d["static"].update(self.get_security_warnings(pe_file))
+                    
+                    # strings
+                    d.update(self.get_strings(malware_file_path))
                         
                     # write outputs to a file
                 self.write_to_json_file(d, mal=malware_file_path, zippie=zip, date=cdate)
